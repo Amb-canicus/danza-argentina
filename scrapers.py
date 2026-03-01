@@ -354,15 +354,32 @@ async def scrapear_teatro_colon():
 
 @evento("CC Borges")
 async def scrapear_cc_borges():
-    """Usa la API interna de CC Borges con curl_cffi para bypassear Cloudflare."""
+    """Playwright que intercepta la llamada API interna de CC Borges.
+    El browser pasa el challenge de Cloudflare y capturamos la respuesta JSON."""
     encontrados = []
     BASE = 'https://centroculturalborges.gob.ar'
     try:
-        from curl_cffi.requests import AsyncSession
-        async with AsyncSession(impersonate="chrome120") as session:
-            r = await session.get(f'{BASE}/api/public/eventos-destacados?disciplina=danza')
-            print(f"CC Borges status={r.status_code} len={len(r.text)}")
-            items = r.json()
+        api_data = []
+
+        async def capturar_respuesta(response):
+            if 'eventos-destacados' in response.url:
+                try:
+                    body = await response.json()
+                    if isinstance(body, list):
+                        api_data.extend(body)
+                except Exception:
+                    pass
+
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(args=CHROMIUM_ARGS)
+            page = await browser.new_page()
+            page.on("response", capturar_respuesta)
+            await page.goto(f'{BASE}/disciplinas?d=danza',
+                            wait_until="networkidle", timeout=45000)
+            await browser.close()
+
+        items = api_data
+        print(f"CC Borges: {len(items)} items interceptados")
         for item in items:
             titulo = limpiar(item.get('titulo', ''))
             if len(titulo) < 5:
