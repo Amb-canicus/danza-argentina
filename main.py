@@ -13,7 +13,7 @@ import importlib, frontend
 
 app = FastAPI()
 
-BASE_URL = os.getenv("BASE_URL", "https://danza-argentina.up.railway.app")
+BASE_URL = os.getenv("BASE_URL", "https://guilty-sheila-kathryn-danzig-0b1aa800.koyeb.app")
 
 # Servir archivos estáticos (og-image, fonts, etc.)
 if os.path.isdir("static"):
