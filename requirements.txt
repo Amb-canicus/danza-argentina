@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+httpx
+beautifulsoup4
+scrapling[all]
+curl_cffi
+playwright
+patchright
+pillow
