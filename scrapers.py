@@ -354,34 +354,26 @@ async def scrapear_teatro_colon():
 
 @evento("CC Borges")
 async def scrapear_cc_borges():
-    """Playwright que intercepta la llamada API interna de CC Borges.
-    El browser pasa el challenge de Cloudflare y capturamos la respuesta JSON."""
+    """cloudscraper para pasar el challenge de Cloudflare y llamar la API interna."""
+    import cloudscraper
+    from concurrent.futures import ThreadPoolExecutor
     encontrados = []
     BASE = 'https://centroculturalborges.gob.ar'
+    API = f'{BASE}/api/public/eventos-destacados?disciplina=danza'
     try:
-        api_data = []
+        def fetch_cf():
+            scraper = cloudscraper.create_scraper()
+            r = scraper.get(API, timeout=30)
+            print(f"CC Borges status={r.status_code}")
+            return r.json() if r.status_code == 200 else []
 
-        async def capturar_respuesta(response):
-            if 'eventos-destacados' in response.url:
-                try:
-                    body = await response.json()
-                    if isinstance(body, list):
-                        api_data.extend(body)
-                except Exception:
-                    pass
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            items = await loop.run_in_executor(pool, fetch_cf)
 
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(args=CHROMIUM_ARGS)
-            page = await browser.new_page()
-            page.on("response", capturar_respuesta)
-            await page.goto(f'{BASE}/disciplinas?d=danza',
-                            wait_until="domcontentloaded", timeout=40000)
-            # Esperar que Cloudflare complete el challenge y la página haga el API call
-            await page.wait_for_timeout(15000)
-            await browser.close()
-
-        items = api_data
-        print(f"CC Borges: {len(items)} items interceptados")
+        if not isinstance(items, list):
+            items = []
+        print(f"CC Borges: {len(items)} items")
         for item in items:
             titulo = limpiar(item.get('titulo', ''))
             if len(titulo) < 5:
