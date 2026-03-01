@@ -186,12 +186,19 @@ async def scrapear_bsas_cultura():
     encontrados = []
     try:
         async with httpx.AsyncClient(headers=HTTP_HEADERS, follow_redirects=True, timeout=20) as client:
-            for page in range(6):
-                r = await client.get(
-                    f'https://buenosaires.gob.ar/api/v1/eventos?categoria=danza&page={page}'
-                )
-                data = r.json()
-                for item in data.get('content', []):
+            pages = await asyncio.gather(*[
+                client.get(f'https://buenosaires.gob.ar/api/v1/eventos?categoria=danza&page={p}')
+                for p in range(6)
+            ], return_exceptions=True)
+            all_items = []
+            for resp in pages:
+                if isinstance(resp, Exception):
+                    continue
+                try:
+                    all_items.extend(resp.json().get('content', []))
+                except Exception:
+                    pass
+            for item in all_items:
                     if item.get('field_tipo_de_evento') != 'Danza':
                         continue
                     titulo = limpiar(item.get('title', ''))
@@ -411,8 +418,9 @@ async def scrapear_cc_recoleta():
         soup = BeautifulSoup(page.html_content, 'html.parser')
         for item in soup.select('div.box-info.event-info'):
             texto = limpiar(item.get_text(separator=' '))
-            # El texto empieza con el hashtag de categoría, ej: "#Danza Título"
-            if '#Danza' not in item.get_text() and not es_de_danza(texto):
+            # El texto empieza con el hashtag de categoría explícita, ej: "#Danza Título"
+            # Solo pasamos eventos donde la categoría es exactamente danza
+            if not re.search(r'#Danza\b', item.get_text()):
                 continue
             # El título está después del tag de categoría
             lineas = [l.strip() for l in item.get_text().splitlines() if l.strip()]
