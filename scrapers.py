@@ -1,14 +1,19 @@
 from bs4 import BeautifulSoup
-from scrapling.fetchers import StealthyFetcher
-from concurrent.futures import ThreadPoolExecutor
 import asyncio
 import httpx
+import os
 import re
 from datetime import datetime, timedelta
 from utils import detectar_tipo, es_de_danza, limpiar
 
-# Executor solo para los 2 scrapers que necesitan browser headless (CIAD, CC Borges)
-executor = ThreadPoolExecutor(max_workers=2)
+# PLAYWRIGHT_ENABLED=false desactiva los scrapers headless (CIAD, CC Borges)
+# Útil en entornos con poca RAM o sin soporte de Chromium
+PLAYWRIGHT_ENABLED = os.getenv("PLAYWRIGHT_ENABLED", "true").lower() != "false"
+
+if PLAYWRIGHT_ENABLED:
+    from scrapling.fetchers import StealthyFetcher
+    from concurrent.futures import ThreadPoolExecutor
+    executor = ThreadPoolExecutor(max_workers=2)
 
 HTTP_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -59,7 +64,10 @@ def _fetch_stealth_sync(url):
     return StealthyFetcher.fetch(url, headless=True, network_idle=True)
 
 async def fetch_stealth(url):
-    """Fetch con browser headless — solo para sitios con contenido JS-rendered (CIAD, CC Borges)."""
+    """Fetch con browser headless — solo para sitios con contenido JS-rendered (CIAD, CC Borges).
+    Si PLAYWRIGHT_ENABLED=false, devuelve página vacía en lugar de crashear."""
+    if not PLAYWRIGHT_ENABLED:
+        return _Page("")
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(executor, _fetch_stealth_sync, url)
 
