@@ -360,6 +360,7 @@ async def scrapear_cc_borges():
     try:
         async with httpx.AsyncClient(headers=HTTP_HEADERS, follow_redirects=True, timeout=15) as client:
             r = await client.get(f'{BASE}/api/public/eventos-destacados?disciplina=danza')
+            print(f"CC Borges status={r.status_code} len={len(r.text)} preview={r.text[:100]!r}")
             items = r.json()
         for item in items:
             titulo = limpiar(item.get('titulo', ''))
