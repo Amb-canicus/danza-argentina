@@ -4,16 +4,8 @@ import httpx
 import os
 import re
 from datetime import datetime, timedelta
+from playwright.async_api import async_playwright
 from utils import detectar_tipo, es_de_danza, limpiar
-
-# PLAYWRIGHT_ENABLED=false desactiva los scrapers headless (CIAD, CC Borges)
-# Útil en entornos con poca RAM o sin soporte de Chromium
-PLAYWRIGHT_ENABLED = os.getenv("PLAYWRIGHT_ENABLED", "true").lower() != "false"
-
-if PLAYWRIGHT_ENABLED:
-    from scrapling.fetchers import StealthyFetcher
-    from concurrent.futures import ThreadPoolExecutor
-    executor = ThreadPoolExecutor(max_workers=2)
 
 HTTP_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -60,16 +52,20 @@ async def fetch_simple(url):
         r = await client.get(url)
         return _Page(r.text)
 
-def _fetch_stealth_sync(url):
-    return StealthyFetcher.fetch(url, headless=True, network_idle=True)
-
 async def fetch_stealth(url):
-    """Fetch con browser headless — solo para sitios con contenido JS-rendered (CIAD, CC Borges).
-    Si PLAYWRIGHT_ENABLED=false, devuelve página vacía en lugar de crashear."""
-    if not PLAYWRIGHT_ENABLED:
+    """Fetch con browser headless — para sitios con contenido JS-rendered (CIAD, CC Borges).
+    Usa --no-sandbox para compatibilidad con contenedores Docker."""
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
+            page = await browser.new_page()
+            await page.goto(url, wait_until="networkidle", timeout=30000)
+            content = await page.content()
+            await browser.close()
+            return _Page(content)
+    except Exception as e:
+        print(f"fetch_stealth error ({url}): {e}")
         return _Page("")
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(executor, _fetch_stealth_sync, url)
 
 def _imagen(item):
     """Extrae la mejor URL de imagen disponible: picture/srcset → amp-img → img."""
