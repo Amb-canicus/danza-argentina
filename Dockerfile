@@ -6,7 +6,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Instalar Chromium para Playwright (usado en 2 scrapers)
-RUN playwright install chromium --with-deps
+RUN patchright install chromium --with-deps
 
 COPY . .
 

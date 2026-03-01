@@ -4,7 +4,7 @@ import httpx
 import os
 import re
 from datetime import datetime, timedelta
-from playwright.async_api import async_playwright
+from patchright.async_api import async_playwright
 from utils import detectar_tipo, es_de_danza, limpiar
 
 HTTP_HEADERS = {
