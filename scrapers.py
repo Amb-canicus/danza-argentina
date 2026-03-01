@@ -375,7 +375,9 @@ async def scrapear_cc_borges():
             page = await browser.new_page()
             page.on("response", capturar_respuesta)
             await page.goto(f'{BASE}/disciplinas?d=danza',
-                            wait_until="networkidle", timeout=45000)
+                            wait_until="domcontentloaded", timeout=40000)
+            # Esperar que Cloudflare complete el challenge y la página haga el API call
+            await page.wait_for_timeout(15000)
             await browser.close()
 
         items = api_data
