@@ -64,14 +64,19 @@ CHROMIUM_ARGS = [
     "--mute-audio",
 ]
 
-async def fetch_stealth(url):
+async def fetch_stealth(url, wait_selector=None):
     """Fetch con browser headless — para sitios con contenido JS-rendered (CIAD, CC Borges).
     Optimizado para contenedores con 512MB RAM."""
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(args=CHROMIUM_ARGS)
             page = await browser.new_page()
-            await page.goto(url, wait_until="networkidle", timeout=30000)
+            await page.goto(url, wait_until="domcontentloaded", timeout=40000)
+            if wait_selector:
+                try:
+                    await page.wait_for_selector(wait_selector, timeout=20000)
+                except Exception:
+                    pass  # si el selector no aparece, usar lo que hay
             content = await page.content()
             await browser.close()
             return _Page(content)
@@ -138,7 +143,7 @@ def extraer_item(item, fuente, url_base, tipo_forzado=None):
 async def scrapear_ciad():
     encontrados = []
     try:
-        page = await fetch_stealth('https://www.laciad.info/todos-los-eventos.html')
+        page = await fetch_stealth('https://www.laciad.info/todos-los-eventos.html', wait_selector='a[href^="Local/"]')
         soup = BeautifulSoup(page.html_content, 'html.parser')
         BASE = 'https://www.laciad.info/'
         GENERICOS = {'webinfo', 'más info', 'website link', 'website', 'reglamento',
@@ -177,25 +182,56 @@ async def scrapear_ciad():
 
 @evento("BA Ciudad")
 async def scrapear_bsas_cultura():
+    """Usa la API JSON de buenosaires.gob.ar filtrando field_tipo_de_evento=='Danza'."""
     encontrados = []
     try:
-        page = await fetch_simple('https://buenosaires.gob.ar/descubrir/agenda-2026')
-        soup = BeautifulSoup(page.html_content, 'html.parser')
-        for item in soup.select('article, .card, li, p'):
-            texto = limpiar(item.get_text(separator=' '))
-            if not es_de_danza(texto) or len(texto) < 30:
-                continue
-            titulo_tag = item.select_one('h1,h2,h3,h4,a,strong')
-            titulo = limpiar(titulo_tag.get_text()) if titulo_tag else texto[:80]
-            link_tag = item.select_one('a[href]')
-            link = link_tag['href'] if link_tag else 'https://buenosaires.gob.ar'
-            if link.startswith('/'):
-                link = 'https://buenosaires.gob.ar' + link
-            encontrados.append({
-                "titulo": titulo[:120], "descripcion": texto[:300],
-                "tipo": detectar_tipo(texto), "fuente": "BA Ciudad",
-                "url": link, "fecha": ""
-            })
+        async with httpx.AsyncClient(headers=HTTP_HEADERS, follow_redirects=True, timeout=20) as client:
+            for page in range(6):
+                r = await client.get(
+                    f'https://buenosaires.gob.ar/api/v1/eventos?categoria=danza&page={page}'
+                )
+                data = r.json()
+                for item in data.get('content', []):
+                    if item.get('field_tipo_de_evento') != 'Danza':
+                        continue
+                    titulo = limpiar(item.get('title', ''))
+                    if len(titulo) < 5:
+                        continue
+                    body = BeautifulSoup(item.get('body', ''), 'html.parser').get_text().strip()
+                    # URL: construir desde slug del view_node
+                    vn = item.get('view_node', '')
+                    slug = vn.split('/')[-1] if vn else ''
+                    url = (f'https://buenosaires.gob.ar/descubrir/{slug}'
+                           if slug else 'https://buenosaires.gob.ar')
+                    # Imagen: en field_image['media_image'] como HTML
+                    imagen = None
+                    img_raw = item.get('field_image')
+                    if isinstance(img_raw, dict):
+                        img_html = img_raw.get('media_image', '')
+                        img_tag = BeautifulSoup(img_html, 'html.parser').find('img', src=True)
+                        if img_tag:
+                            src = img_tag['src']
+                            if src.startswith('/'):
+                                src = 'https://buenosaires.gob.ar' + src
+                            if src.startswith('http'):
+                                imagen = src
+                    # Fecha: timestamp unix
+                    fecha = ''
+                    ts = str(item.get('field_fecha_del_evento', '')).strip()
+                    if ts.isdigit():
+                        from datetime import datetime as _dt
+                        fecha = _dt.fromtimestamp(int(ts)).strftime('%d/%m/%Y')
+                    result = {
+                        "titulo": titulo[:120],
+                        "descripcion": limpiar(body)[:300],
+                        "tipo": detectar_tipo(titulo + ' ' + body),
+                        "fuente": "BA Ciudad",
+                        "url": url,
+                        "fecha": fecha,
+                    }
+                    if imagen:
+                        result["imagen"] = imagen
+                    encontrados.append(result)
     except Exception as e:
         print(f"BA Ciudad error: {e}")
     return encontrados
@@ -207,10 +243,35 @@ async def scrapear_palacio_libertad():
     try:
         page = await fetch_simple('https://palaciolibertad.gob.ar/agenda/')
         soup = BeautifulSoup(page.html_content, 'html.parser')
-        for item in soup.select('article')[:30]:
-            resultado = extraer_item(item, "Palacio Libertad", "https://palaciolibertad.gob.ar")
-            if resultado:
-                encontrados.append(resultado)
+        vistos = set()
+        for art in soup.select('article.mec-event-article'):
+            h3 = art.find('h3')
+            if not h3:
+                continue
+            titulo = limpiar(h3.get_text())
+            if len(titulo) < 5 or titulo in vistos:
+                continue
+            texto = limpiar(art.get_text(separator=' '))
+            # Palacio Libertad usa etiqueta de categoría explícita ("Danza") en el artículo.
+            # Usamos regex para evitar falsos positivos de "Música académica" (clásic)
+            # o "música experimental" (experimental).
+            if not re.search(r'\bdanza\b', texto.lower()) and not re.search(r'\bballet\b', texto.lower()):
+                continue
+            vistos.add(titulo)
+            link_tag = art.find('a', href=True)
+            link = link_tag['href'] if link_tag else 'https://palaciolibertad.gob.ar'
+            if link.startswith('/'):
+                link = 'https://palaciolibertad.gob.ar' + link
+            fecha_el = art.select_one('[class*="date"]')
+            fecha = limpiar(fecha_el.get_text()) if fecha_el else ''
+            encontrados.append({
+                "titulo": titulo[:120],
+                "descripcion": texto[:300],
+                "tipo": detectar_tipo(titulo + ' ' + texto),
+                "fuente": "Palacio Libertad",
+                "url": link,
+                "fecha": fecha,
+            })
     except Exception as e:
         print(f"Palacio Libertad error: {e}")
     return encontrados
@@ -288,7 +349,7 @@ async def scrapear_teatro_colon():
 async def scrapear_cc_borges():
     encontrados = []
     try:
-        page = await fetch_stealth('https://centroculturalborges.gob.ar/disciplinas?d=danza')
+        page = await fetch_stealth('https://centroculturalborges.gob.ar/disciplinas?d=danza', wait_selector='h3')
         soup = BeautifulSoup(page.html_content, 'html.parser')
         # py-5 = próximos eventos; bg-white = "lo que pasó" (se excluye)
         seccion = soup.find('section', class_=lambda c: c and 'py-5' in c)
@@ -330,7 +391,7 @@ async def scrapear_usina():
     try:
         page = await fetch_simple('https://usinadelarte.ar/actividades/')
         soup = BeautifulSoup(page.html_content, 'html.parser')
-        for item in soup.select('article, .card, li, div.actividad')[:30]:
+        for item in soup.select('.actividad'):
             texto = limpiar(item.get_text(separator=' '))
             if not es_de_danza(texto) or len(texto) < 30:
                 continue
@@ -348,13 +409,25 @@ async def scrapear_cc_recoleta():
     try:
         page = await fetch_simple('http://centroculturalrecoleta.org/agenda')
         soup = BeautifulSoup(page.html_content, 'html.parser')
-        for item in soup.select('li, h3, article')[:30]:
+        for item in soup.select('div.box-info.event-info'):
             texto = limpiar(item.get_text(separator=' '))
-            if not es_de_danza(texto) or len(texto) < 20:
+            # El texto empieza con el hashtag de categoría, ej: "#Danza Título"
+            if '#Danza' not in item.get_text() and not es_de_danza(texto):
                 continue
-            resultado = extraer_item(item, "CC Recoleta", "http://centroculturalrecoleta.org")
-            if resultado:
-                encontrados.append(resultado)
+            # El título está después del tag de categoría
+            lineas = [l.strip() for l in item.get_text().splitlines() if l.strip()]
+            titulo = lineas[1] if len(lineas) > 1 else lineas[0] if lineas else ''
+            if len(titulo) < 5:
+                continue
+            resultado = {
+                "titulo": titulo[:120],
+                "descripcion": texto[:300],
+                "tipo": detectar_tipo(texto),
+                "fuente": "CC Recoleta",
+                "url": "http://centroculturalrecoleta.org/agenda",
+                "fecha": "",
+            }
+            encontrados.append(resultado)
     except Exception as e:
         print(f"CC Recoleta error: {e}")
     return encontrados
