@@ -24,6 +24,20 @@ noticias = []
 convocatorias = []
 
 
+BASE_BORGES = "https://centroculturalborges.gob.ar"
+# Hardcodeados porque Cloudflare bloquea la IP de Koyeb. Actualizar cada ~4 semanas.
+# Última actualización: 2026-03-01
+EVENTOS_BORGES_RESPALDO = [
+    {"titulo": "QUE XOU DA XUXA É ESSE?", "descripcion": "En 1991 Leticia Mazur se presentó para ser Paquita de Xuxa, justo antes de la paranoia colectiva sobre mensajes satánicos en sus canciones. (+18)", "tipo": "contemporánea", "fuente": "CC Borges", "url": f"{BASE_BORGES}/disciplinas?d=danza", "fecha": "2026-03-01", "imagen": f"{BASE_BORGES}/uploads/1655c89e-9453-40ba-8577-70500ec5b305.jpg"},
+    {"titulo": "Mi joven vida tiene un final", "descripcion": "Pablo Rotemberg dice ser Norma Desmond, mítica protagonista de Sunset Boulevard, la película dirigida por Billy Wilder en 1950.", "tipo": "contemporánea", "fuente": "CC Borges", "url": f"{BASE_BORGES}/disciplinas?d=danza", "fecha": "2026-03-05", "imagen": f"{BASE_BORGES}/uploads/c74eb6e3-4d10-496d-a5d5-f90e58e1e475.jpg"},
+    {"titulo": "LA MAYOR", "descripcion": "Una aventura híbrida entre la vibración sensorial de las palabras, y el extravío delirante de la literatura.", "tipo": "contemporánea", "fuente": "CC Borges", "url": f"{BASE_BORGES}/disciplinas?d=danza", "fecha": "2026-03-07", "imagen": f"{BASE_BORGES}/uploads/f05e91da-bea0-4e13-ae3f-a555c80b35cc.jpg"},
+    {"titulo": "EXPERIMENTA#03. DANZA + ARTES VISUALES", "descripcion": "Una nueva edición del ciclo que propone el encuentro entre un/a coreógrafo/a y un/a artista visual para crear una obra en cruce donde el tiempo y el espacio se vuelven materia viva.", "tipo": "contemporánea", "fuente": "CC Borges", "url": f"{BASE_BORGES}/disciplinas?d=danza", "fecha": "2026-04-03", "imagen": f"{BASE_BORGES}/uploads/8bd841cc-c202-4694-b289-655fd067fd63.jpg"},
+    {"titulo": "EXPERIMENTA#03. Cruza koi", "descripcion": "Un apareo de dudas entre perra y pez koi, al ritmo de un salto de agua. Interferencias, inquietudes y obviedades jadeantes a contracorriente.", "tipo": "contemporánea", "fuente": "CC Borges", "url": f"{BASE_BORGES}/disciplinas?d=danza", "fecha": "2026-04-03", "imagen": f"{BASE_BORGES}/uploads/37773da7-30d6-4136-b2a5-1bfd011b4da2.jpg"},
+    {"titulo": "EXPERIMENTA#03. MUEVE MONTAÑAS", "descripcion": "Un monólogo-performance donde escultura y texto se funden en una montaña de relatos y materiales.", "tipo": "contemporánea", "fuente": "CC Borges", "url": f"{BASE_BORGES}/disciplinas?d=danza", "fecha": "2026-04-10", "imagen": f"{BASE_BORGES}/uploads/274fd1ab-c7d6-41a8-83b5-f2d670e719fa.jpg"},
+    {"titulo": "Experimenta#03. Instalación Eléctrica #1", "descripcion": "La sala se convierte en un organismo bio-electromecánico donde luz, sonido y cuerpo generan un cortocircuito poético en tiempo real.", "tipo": "contemporánea", "fuente": "CC Borges", "url": f"{BASE_BORGES}/disciplinas?d=danza", "fecha": "2026-04-17", "imagen": f"{BASE_BORGES}/uploads/ba92b293-d832-4749-ac13-783489996583.jpg"},
+    {"titulo": "Experimenta#03. Formas breves", "descripcion": "Un campo de investigación entre escultura y danza, donde cuerpo y materia se conciben como sistemas relacionales en constante negociación.", "tipo": "contemporánea", "fuente": "CC Borges", "url": f"{BASE_BORGES}/disciplinas?d=danza", "fecha": "2026-04-24", "imagen": f"{BASE_BORGES}/uploads/4723e5f0-fb55-40a2-9d08-7ebdfa332498.jpg"},
+]
+
 NOTICIAS_RESPALDO = [
     {"titulo": "El Ballet Estable del Colón celebra 80 años", "descripcion": "La compañía más importante de danza clásica de Argentina cumple ocho décadas.", "tipo": "clásica", "fuente": "Telam", "url": "https://www.telam.com.ar", "fecha": "2026"},
     {"titulo": "Récord de inscriptos en el Festival de Malambo de Laborde", "descripcion": "El certamen folklórico más prestigioso del país recibió inscripciones de todo el país.", "tipo": "folklórica", "fuente": "Infobae", "url": "https://www.infobae.com", "fecha": "2026"},
@@ -157,6 +171,16 @@ async def scrape():
         print(f"  {'✅' if isinstance(resultado, list) else '❌'} {scraper['nombre']}: {estado}")
 
     listas_ev = [r for r in resultados_ev if isinstance(r, list)]
+
+    # Agregar eventos hardcodeados de CC Borges filtrando los ya vencidos
+    hoy = date.today()
+    borges_vigentes = [
+        e for e in EVENTOS_BORGES_RESPALDO
+        if date.fromisoformat(e["fecha"]) >= hoy
+    ]
+    if borges_vigentes:
+        listas_ev.append(borges_vigentes)
+        print(f"  ✅ CC Borges (respaldo): {len(borges_vigentes)} items")
 
     todos_eventos  = mezclar(listas_ev)
     todas_noticias = mezclar([r[:10] for r in resultados_no if isinstance(r, list)])
