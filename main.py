@@ -130,7 +130,8 @@ async def scraper_loop():
 
 @app.on_event("startup")
 async def startup():
-    await scrape()
+    # Scraping en background para no bloquear el startup (evita OOM en servidores con poca RAM)
+    asyncio.create_task(scrape())
     asyncio.create_task(scraper_loop())
 
 async def scrape():
