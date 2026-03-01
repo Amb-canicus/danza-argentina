@@ -354,39 +354,31 @@ async def scrapear_teatro_colon():
 
 @evento("CC Borges")
 async def scrapear_cc_borges():
+    """Usa la API interna de CC Borges — no requiere Playwright."""
     encontrados = []
+    BASE = 'https://centroculturalborges.gob.ar'
     try:
-        page = await fetch_stealth('https://centroculturalborges.gob.ar/disciplinas?d=danza', wait_selector='h3')
-        soup = BeautifulSoup(page.html_content, 'html.parser')
-        # py-5 = próximos eventos; bg-white = "lo que pasó" (se excluye)
-        seccion = soup.find('section', class_=lambda c: c and 'py-5' in c)
-        vistos = set()
-        for h in (seccion.select('h3') if seccion else soup.select('h3')):
-            titulo = limpiar(h.get_text())
-            if len(titulo) < 5 or titulo in vistos:
+        async with httpx.AsyncClient(headers=HTTP_HEADERS, follow_redirects=True, timeout=15) as client:
+            r = await client.get(f'{BASE}/api/public/eventos-destacados?disciplina=danza')
+            items = r.json()
+        for item in items:
+            titulo = limpiar(item.get('titulo', ''))
+            if len(titulo) < 5:
                 continue
-            vistos.add(titulo)
-            siguiente = h.find_next('p')
-            desc = limpiar(siguiente.get_text()) if siguiente else ""
-            # La imagen está en el HTML estático dentro del mismo card
-            card_div = h.parent
-            img_tag = (card_div.find('img', src=True) if card_div else None) \
-                      or h.find_previous('img', src=True)
-            imagen = img_tag.get('src') if img_tag else None
-            if imagen and imagen.startswith('//'):
-                imagen = 'https:' + imagen
-            item = {
+            desc = limpiar(item.get('descripcion', ''))
+            fecha = item.get('fechaSiguienteRepeticion', '') or item.get('fechaDisplay', '')
+            imagen_path = item.get('imagenUrl', '')
+            imagen = (BASE + imagen_path) if imagen_path and imagen_path.startswith('/') else None
+            encontrados.append({
                 "titulo": titulo[:120],
                 "descripcion": desc[:300],
-                "tipo": detectar_tipo(titulo + " " + desc),
+                "tipo": detectar_tipo(titulo + ' ' + desc),
                 "fuente": "CC Borges",
-                "url": "https://centroculturalborges.gob.ar/disciplinas?d=danza",
-                "fecha": "",
-                "es_danza": True
-            }
-            if imagen:
-                item["imagen"] = imagen
-            encontrados.append(item)
+                "url": f'{BASE}/disciplinas?d=danza',
+                "fecha": fecha,
+                "es_danza": True,
+                **({"imagen": imagen} if imagen else {}),
+            })
     except Exception as e:
         print(f"CC Borges error: {e}")
     return encontrados
