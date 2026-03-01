@@ -46,9 +46,9 @@ class _Page:
     """Envuelve la respuesta httpx para que los scrapers usen page.html_content igual que con Scrapling."""
     def __init__(self, text): self.html_content = text
 
-async def fetch_simple(url):
+async def fetch_simple(url, timeout=30):
     """Fetch liviano con httpx — para sitios que no usan bot-protection ni JS dinámico."""
-    async with httpx.AsyncClient(headers=HTTP_HEADERS, follow_redirects=True, timeout=15) as client:
+    async with httpx.AsyncClient(headers=HTTP_HEADERS, follow_redirects=True, timeout=timeout) as client:
         r = await client.get(url)
         return _Page(r.text)
 
