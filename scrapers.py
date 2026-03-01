@@ -52,12 +52,24 @@ async def fetch_simple(url):
         r = await client.get(url)
         return _Page(r.text)
 
+CHROMIUM_ARGS = [
+    "--no-sandbox",
+    "--disable-dev-shm-usage",
+    "--single-process",        # corre todo en un proceso, ~100MB en vez de ~350MB
+    "--disable-gpu",
+    "--no-zygote",
+    "--disable-extensions",
+    "--disable-background-networking",
+    "--disable-default-apps",
+    "--mute-audio",
+]
+
 async def fetch_stealth(url):
     """Fetch con browser headless — para sitios con contenido JS-rendered (CIAD, CC Borges).
-    Usa --no-sandbox para compatibilidad con contenedores Docker."""
+    Optimizado para contenedores con 512MB RAM."""
     try:
         async with async_playwright() as p:
-            browser = await p.chromium.launch(args=["--no-sandbox", "--disable-dev-shm-usage"])
+            browser = await p.chromium.launch(args=CHROMIUM_ARGS)
             page = await browser.new_page()
             await page.goto(url, wait_until="networkidle", timeout=30000)
             content = await page.content()
