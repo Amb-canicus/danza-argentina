@@ -139,6 +139,29 @@ def extraer_item(item, fuente, url_base, tipo_forzado=None):
 #  SCRAPERS DE EVENTOS
 # ─────────────────────────────────────────
 
+async def _ciad_imagen(url):
+    """Fetch página de evento CIAD y extrae la primera imagen del evento."""
+    try:
+        async with httpx.AsyncClient(headers=HTTP_HEADERS, follow_redirects=True, timeout=10) as c:
+            r = await c.get(url)
+            soup = BeautifulSoup(r.text, 'html.parser')
+            for img in soup.find_all('img'):
+                w = int(img.get('width', 0) or 0)
+                h = int(img.get('height', 0) or 0)
+                src = img.get('src', '')
+                # foto de evento: dimensiones razonables, sin logos CIAD ni barras decorativas
+                if w >= 200 and h >= 100 and w < 1000 and 'Ciad' not in src and 'barra' not in src:
+                    if src.startswith('../../'):
+                        src = 'https://www.laciad.info/' + src[6:]
+                    elif src.startswith('/'):
+                        src = 'https://www.laciad.info' + src
+                    if src.startswith('http'):
+                        return src
+    except Exception:
+        pass
+    return None
+
+
 @evento("CIAD")
 async def scrapear_ciad():
     encontrados = []
@@ -156,7 +179,6 @@ async def scrapear_ciad():
             vistos.add(href)
             titulo = limpiar(a.get_text(separator=' '))
             if titulo.lower().strip() in GENERICOS or len(titulo) < 5:
-                # derivar título desde el nombre del archivo en la URL
                 import os as _os
                 partes = href.split('/')
                 nombre = _os.path.splitext(partes[-1])[0]
@@ -166,7 +188,6 @@ async def scrapear_ciad():
                     titulo = f"{titulo} — {mes}"
             if len(titulo) < 3:
                 continue
-            # descartar eventos de años pasados
             anos = re.findall(r'\b(20\d\d)\b', titulo)
             if anos and all(int(a) < 2026 for a in anos):
                 continue
@@ -175,6 +196,11 @@ async def scrapear_ciad():
                 "tipo": detectar_tipo(titulo), "fuente": "CIAD",
                 "url": BASE + href, "fecha": ""
             })
+        # Fetch imágenes en paralelo desde las páginas de detalle
+        imagenes = await asyncio.gather(*[_ciad_imagen(e['url']) for e in encontrados], return_exceptions=True)
+        for item, img in zip(encontrados, imagenes):
+            if img and not isinstance(img, Exception):
+                item['imagen'] = img
     except Exception as e:
         print(f"CIAD error: {e}")
     return encontrados
@@ -616,14 +642,19 @@ async def scrapear_ctba_agenda():
                 link = link_tag['href'] if link_tag else BASE
                 if link.startswith('/'):
                     link = BASE + link
-                items.append({
+                bg = item.select_one('[data-background-image]')
+                imagen = bg['data-background-image'] if bg else None
+                entry = {
                     "titulo": titulo[:120],
                     "descripcion": texto[:300],
                     "tipo": detectar_tipo(texto),
                     "fuente": "CTBA",
                     "url": link,
                     "fecha": fecha_str,
-                })
+                }
+                if imagen:
+                    entry["imagen"] = imagen
+                items.append(entry)
         except Exception as e:
             print(f"CTBA {fecha_str} error: {e}")
         return items
