@@ -452,38 +452,45 @@ async def scrapear_cc_recoleta():
 
 @noticia("Balletín Dance")
 async def scrapear_balletin_dance():
+    """Usa el feed RSS para evitar el bloqueo de Cloudflare en Koyeb."""
+    from email.utils import parsedate_to_datetime
     encontrados = []
     try:
-        page = await fetch_simple('https://balletindance.com/')
-        soup = BeautifulSoup(page.html_content, 'html.parser')
-        vistos = set()
-        for mod in soup.select('.td_module_wrap'):
-            h = mod.select_one('h3.entry-title, h3')
-            if not h:
+        page = await fetch_simple('https://balletindance.com/feed/')
+        # Extraer links con regex antes de parsear (BeautifulSoup xml trata <link> como void)
+        links = re.findall(r'<link>(https://balletindance\.com[^<]+)</link>', page.html_content)
+        soup = BeautifulSoup(page.html_content, 'xml')
+        items = soup.select('item')
+        for i, item in enumerate(items):
+            titulo_tag = item.find('title')
+            if not titulo_tag:
                 continue
-            link_tag = h.find('a')
-            titulo = limpiar(h.get_text())
-            if len(titulo) < 10 or titulo in vistos:
+            titulo = limpiar(titulo_tag.get_text())
+            if len(titulo) < 5:
                 continue
-            vistos.add(titulo)
-            link = link_tag['href'] if link_tag else 'https://balletindance.com'
-            img_tag = mod.select_one('img[data-src]')
+            link = links[i] if i < len(links) else 'https://balletindance.com'
+            pub = item.find('pubDate').get_text() if item.find('pubDate') else ''
+            try:
+                fecha_iso = parsedate_to_datetime(pub).strftime('%Y-%m-%dT%H:%M:%S')
+            except Exception:
+                fecha_iso = ''
+            desc_tag = item.find('description')
+            desc = limpiar(desc_tag.get_text()) if desc_tag else titulo
+            encoded = item.find('encoded')
             imagen = None
-            if img_tag:
-                src = img_tag.get('data-src', '')
-                src = re.sub(r'-\d{2,4}x\d{2,4}', '', src)
-                if src.startswith('http'):
-                    imagen = src
-            time_tag = mod.find('time')
-            fecha_iso = time_tag.get('datetime', '') if time_tag else ''
-            item = {
-                "titulo": titulo[:120], "descripcion": titulo[:300],
-                "tipo": detectar_tipo(titulo), "fuente": "Balletín Dance",
+            if encoded:
+                m = re.search(r'src="(https://balletindance\.com/wp-content/uploads/[^"]+)"', encoded.get_text())
+                if m:
+                    imagen = re.sub(r'-\d{3,4}x\d{3,4}(?=\.\w+$)', '', m.group(1))
+            resultado = {
+                "titulo": titulo[:120], "descripcion": desc[:300],
+                "tipo": detectar_tipo(titulo + ' ' + desc),
+                "fuente": "Balletín Dance",
                 "url": link, "fecha": "", "fecha_iso": fecha_iso,
             }
             if imagen:
-                item["imagen"] = imagen
-            encontrados.append(item)
+                resultado["imagen"] = imagen
+            encontrados.append(resultado)
     except Exception as e:
         print(f"Balletín Dance error: {e}")
     return encontrados
@@ -901,6 +908,49 @@ async def scrapear_la_nacion():
             encontrados.append(resultado)
     except Exception as e:
         print(f"La Nación error: {e}")
+    return encontrados
+
+
+@evento("Cultura Nación")
+async def scrapear_cultura_nacion():
+    """Agenda Cultural Federal filtrada por categoría danza."""
+    encontrados = []
+    BASE = 'https://www.cultura.gob.ar'
+    try:
+        page = await fetch_simple(f'{BASE}/agenda/filtro/?categoria=danza')
+        soup = BeautifulSoup(page.html_content, 'html.parser')
+        for art in soup.select('article'):
+            titulo_tag = art.select_one('h3.titulo a')
+            if not titulo_tag:
+                continue
+            titulo = limpiar(titulo_tag.get_text())
+            if len(titulo) < 5:
+                continue
+            link_tag = art.select_one('a.goto')
+            link = link_tag.get('href', '') if link_tag else ''
+            if link.startswith('/'):
+                link = BASE + link
+            elif not link.startswith('http'):
+                link = BASE + '/' + link.lstrip('/')
+            fecha_tag = art.select_one('header small')
+            fecha = limpiar(fecha_tag.get_text()) if fecha_tag else ''
+            img_div = art.select_one('.image-wrapper[data-original]')
+            imagen = (BASE + img_div['data-original']) if img_div else None
+            desc_tag = art.select_one('.bajada')
+            desc = limpiar(desc_tag.get_text()) if desc_tag else titulo
+            resultado = {
+                "titulo": titulo[:120],
+                "descripcion": desc[:300],
+                "tipo": detectar_tipo(titulo + ' ' + desc),
+                "fuente": "Cultura Nación",
+                "url": link,
+                "fecha": fecha,
+            }
+            if imagen:
+                resultado["imagen"] = imagen
+            encontrados.append(resultado)
+    except Exception as e:
+        print(f"Cultura Nación error: {e}")
     return encontrados
 
 
