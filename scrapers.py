@@ -487,6 +487,7 @@ async def scrapear_balletin_dance():
                 "tipo": detectar_tipo(titulo + ' ' + desc),
                 "fuente": "Balletín Dance",
                 "url": link, "fecha": "", "fecha_iso": fecha_iso,
+                "es_danza": True,  # revista de danza — todo su contenido es de danza
             }
             if imagen:
                 resultado["imagen"] = imagen
