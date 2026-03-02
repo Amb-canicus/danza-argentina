@@ -334,14 +334,34 @@ async def scrapear_teatro_colon():
     try:
         page = await fetch_simple('https://teatrocolon.org.ar/categoria-produccion/ballet/')
         soup = BeautifulSoup(page.html_content, 'html.parser')
-        NO_DANZA = {'orquesta', 'sinfónica', 'concierto', 'ópera', 'lírico', 'coro'}
-        for item in soup.select('article, .produccion, .post, li')[:20]:
-            resultado = extraer_item(item, "Teatro Colón", "https://teatrocolon.org.ar", tipo_forzado="clásica")
-            if resultado:
-                t = (resultado['titulo'] + ' ' + resultado['descripcion']).lower()
-                if any(k in t for k in NO_DANZA) and 'ballet' not in t and 'danza' not in t:
-                    continue
-                encontrados.append(resultado)
+        for card in soup.select('article.event-card'):
+            link_tag = card.select_one('a[href]')
+            if not link_tag:
+                continue
+            link = link_tag.get('href', '')
+            if not link.startswith('http'):
+                link = 'https://teatrocolon.org.ar' + link
+            # El atributo title del <a> a veces está vacío; fallback al slug de la URL
+            titulo = link_tag.get('title', '').strip()
+            if not titulo:
+                slug = link.rstrip('/').split('/')[-1]
+                titulo = slug.replace('-', ' ').title()
+            if len(titulo) < 5:
+                continue
+            img_tag = card.select_one('img[src]')
+            imagen = img_tag['src'] if img_tag else None
+            resultado = {
+                "titulo": titulo[:120],
+                "descripcion": titulo[:300],
+                "tipo": "clásica",
+                "fuente": "Teatro Colón",
+                "url": link,
+                "fecha": "",
+                "es_danza": True,
+            }
+            if imagen:
+                resultado["imagen"] = imagen
+            encontrados.append(resultado)
     except Exception as e:
         print(f"Teatro Colón error: {e}")
     return encontrados
