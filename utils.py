@@ -12,6 +12,15 @@ KEYWORDS_CONTEMP = ["contemporánea", "contemporanea", "contemporáneo", "contem
 KEYWORDS_TANGO   = ["tango", "milonga", "bandoneon", "bandoneón", "orquesta típica", "tango escenario", "tango pista", "milonguero"]
 KEYWORDS_DANZA   = ["danza", "baile", "bailarín", "bailarina", "ballet", "coreograf", "malambo", "zamba", "tango", "milonga"]
 
+# Keywords estrictos: solo se usan cuando la fuente mezcla danza con otros eventos culturales
+# (música, cine, charlas). Excluyen "contemporánea", "colón", "tango" suelto, "folklor" suelto.
+KEYWORDS_DANZA_ESTRICTO = [
+    "danza", "ballet", "baile", "bailar", "bailarín", "bailarina",
+    "coreograf", "malambo", "milonga",
+    "tango ba", "campeonato de baile",
+    "tango escenario", "tango de pista", "tango pista",
+]
+
 # Keywords para filtrar convocatorias.
 # Solo pasan convocatorias que mencionen alguna de estas disciplinas.
 # Editá esta lista para ampliar o acotar el filtro.
@@ -64,6 +73,11 @@ def es_de_danza(texto):
     if any(k in t for k in KEYWORDS_EXCLUIR_SIEMPRE):
         return False
     return any(k in t for k in KEYWORDS_DANZA + KEYWORDS_CLASICA + KEYWORDS_FOLK + KEYWORDS_CONTEMP)
+
+def es_danza_estricto(texto):
+    """Filtro estricto para fuentes que mezclan danza con otros eventos culturales."""
+    t = texto.lower()
+    return any(k in t for k in KEYWORDS_DANZA_ESTRICTO)
 
 def es_convocatoria_danza(texto):
     """
@@ -169,6 +183,12 @@ def deduplicar(lista):
             if item.get("es_danza") or es_de_danza(item["titulo"] + " " + item["descripcion"]):
                 vistos.add(k)
                 resultado.append(limpiar_item(item))
+        elif k in vistos and item.get("imagen"):
+            # si el ganador no tiene imagen pero este duplicado sí, transferir
+            for r in resultado:
+                if r["titulo"][:80].lower() == k and not r.get("imagen"):
+                    r["imagen"] = item["imagen"]
+                    break
     return resultado
 
 def mezclar(listas):

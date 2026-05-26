@@ -186,9 +186,9 @@ async def scrape():
     todas_noticias = mezclar([r[:10] for r in resultados_no if isinstance(r, list)])
     todas_conv     = mezclar([r for r in resultados_conv if isinstance(r, list)])
 
-    eventos       = deduplicar(todos_eventos)[:50]
-    noticias      = deduplicar(filtrar_recientes(todas_noticias, meses=2))[:50] or NOTICIAS_RESPALDO
-    convocatorias = deduplicar(todas_conv)[:50]
+    eventos       = deduplicar(todos_eventos)[:200]
+    noticias      = deduplicar(filtrar_recientes(todas_noticias, meses=2))[:100] or NOTICIAS_RESPALDO
+    convocatorias = deduplicar(todas_conv)[:200]
 
     print(f"✅ {len(eventos)} eventos, {len(noticias)} noticias, {len(convocatorias)} convocatorias.")
 

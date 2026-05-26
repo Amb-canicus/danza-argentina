@@ -5,7 +5,7 @@ import os
 import re
 from datetime import datetime, timedelta
 from patchright.async_api import async_playwright
-from utils import detectar_tipo, es_de_danza, limpiar
+from utils import detectar_tipo, es_de_danza, es_danza_estricto, limpiar
 
 HTTP_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -144,17 +144,27 @@ async def _ciad_imagen(url):
     try:
         async with httpx.AsyncClient(headers=HTTP_HEADERS, follow_redirects=True, timeout=10) as c:
             r = await c.get(url)
+            if r.status_code >= 400:
+                return None
             soup = BeautifulSoup(r.text, 'html.parser')
+            base = 'https://www.laciad.info'
             for img in soup.find_all('img'):
-                w = int(img.get('width', 0) or 0)
-                h = int(img.get('height', 0) or 0)
+                try:
+                    w = int(img.get('width') or 0)
+                    h = int(img.get('height') or 0)
+                except (ValueError, TypeError):
+                    w = h = 0
                 src = img.get('src', '')
                 # foto de evento: dimensiones razonables, sin logos CIAD ni barras decorativas
                 if w >= 200 and h >= 100 and w < 1000 and 'Ciad' not in src and 'barra' not in src:
                     if src.startswith('../../'):
-                        src = 'https://www.laciad.info/' + src[6:]
+                        src = base + '/' + src[6:]
+                    elif src.startswith('../'):
+                        src = base + '/' + src[3:]
                     elif src.startswith('/'):
-                        src = 'https://www.laciad.info' + src
+                        src = base + src
+                    elif not src.startswith('http'):
+                        src = base + '/' + src
                     if src.startswith('http'):
                         return src
     except Exception:
@@ -194,7 +204,7 @@ async def scrapear_ciad():
             encontrados.append({
                 "titulo": titulo[:120], "descripcion": titulo[:300],
                 "tipo": detectar_tipo(titulo), "fuente": "CIAD",
-                "url": BASE + href, "fecha": ""
+                "url": BASE + href, "fecha": "", "es_danza": True
             })
         # Fetch imágenes en paralelo desde las páginas de detalle
         imagenes = await asyncio.gather(*[_ciad_imagen(e['url']) for e in encontrados], return_exceptions=True)
@@ -208,7 +218,7 @@ async def scrapear_ciad():
 
 @evento("BA Ciudad")
 async def scrapear_bsas_cultura():
-    """Usa la API JSON de buenosaires.gob.ar filtrando field_tipo_de_evento=='Danza'."""
+    """API JSON de buenosaires.gob.ar — filtra por keywords de danza en título/tags."""
     encontrados = []
     try:
         async with httpx.AsyncClient(headers=HTTP_HEADERS, follow_redirects=True, timeout=20) as client:
@@ -221,33 +231,33 @@ async def scrapear_bsas_cultura():
                 if isinstance(resp, Exception):
                     continue
                 try:
-                    all_items.extend(resp.json().get('content', []))
+                    all_items.extend(resp.json().get('rows', []))
                 except Exception:
                     pass
             for item in all_items:
-                    if item.get('field_tipo_de_evento') != 'Danza':
-                        continue
                     titulo = limpiar(item.get('title', ''))
                     if len(titulo) < 5:
                         continue
+                    tags = str(item.get('field_tags', ''))
+                    # Filtro estricto: la API de BA Ciudad mezcla música, cine, charlas.
+                    # es_de_danza() es demasiado permisiva aquí ("contemporánea", "colón").
+                    if not es_danza_estricto(titulo + ' ' + tags):
+                        continue
                     body = BeautifulSoup(item.get('body', ''), 'html.parser').get_text().strip()
-                    # URL: construir desde slug del view_node
+                    # URL: desde view_node
                     vn = item.get('view_node', '')
                     slug = vn.split('/')[-1] if vn else ''
                     url = (f'https://buenosaires.gob.ar/descubrir/{slug}'
                            if slug else 'https://buenosaires.gob.ar')
-                    # Imagen: en field_image['media_image'] como HTML
+                    # Imagen: media_image es ahora URL directa
                     imagen = None
                     img_raw = item.get('field_image')
                     if isinstance(img_raw, dict):
-                        img_html = img_raw.get('media_image', '')
-                        img_tag = BeautifulSoup(img_html, 'html.parser').find('img', src=True)
-                        if img_tag:
-                            src = img_tag['src']
-                            if src.startswith('/'):
-                                src = 'https://buenosaires.gob.ar' + src
-                            if src.startswith('http'):
-                                imagen = src
+                        src = img_raw.get('media_image', '')
+                        if src and src.startswith('/'):
+                            src = 'https://buenosaires.gob.ar' + src
+                        if src and src.startswith('http'):
+                            imagen = src
                     # Fecha: timestamp unix
                     fecha = ''
                     ts = str(item.get('field_fecha_del_evento', '')).strip()
@@ -261,6 +271,7 @@ async def scrapear_bsas_cultura():
                         "fuente": "BA Ciudad",
                         "url": url,
                         "fecha": fecha,
+                        "es_danza": True,
                     }
                     if imagen:
                         result["imagen"] = imagen
@@ -503,18 +514,16 @@ async def scrapear_balletin_dance():
     encontrados = []
     try:
         page = await fetch_simple('https://balletindance.com/feed/')
-        # Extraer links con regex antes de parsear (BeautifulSoup xml trata <link> como void)
-        links = re.findall(r'<link>(https://balletindance\.com[^<]+)</link>', page.html_content)
         soup = BeautifulSoup(page.html_content, 'xml')
         items = soup.select('item')
-        for i, item in enumerate(items):
+        for item in items:
             titulo_tag = item.find('title')
             if not titulo_tag:
                 continue
             titulo = limpiar(titulo_tag.get_text())
             if len(titulo) < 5:
                 continue
-            link = links[i] if i < len(links) else 'https://balletindance.com'
+            link = _rss_link(item) or 'https://balletindance.com'
             pub = item.find('pubDate').get_text() if item.find('pubDate') else ''
             try:
                 fecha_iso = parsedate_to_datetime(pub).strftime('%Y-%m-%dT%H:%M:%S')
@@ -522,7 +531,7 @@ async def scrapear_balletin_dance():
                 fecha_iso = ''
             desc_tag = item.find('description')
             desc = limpiar(desc_tag.get_text()) if desc_tag else titulo
-            encoded = item.find('encoded')
+            encoded = item.find('content:encoded') or item.find('encoded')
             imagen = None
             if encoded:
                 m = re.search(r'src="(https://balletindance\.com/wp-content/uploads/[^"]+)"', encoded.get_text())
@@ -643,7 +652,9 @@ async def scrapear_ctba_agenda():
                 if link.startswith('/'):
                     link = BASE + link
                 bg = item.select_one('[data-background-image]')
-                imagen = bg['data-background-image'] if bg else None
+                imagen = bg['data-background-image'].strip() if bg else None
+                if imagen and imagen.startswith('/'):
+                    imagen = BASE + imagen
                 entry = {
                     "titulo": titulo[:120],
                     "descripcion": texto[:300],
@@ -700,21 +711,41 @@ async def scrapear_clarin():
 @noticia("Página 12")
 async def scrapear_pagina12():
     encontrados = []
+    BASE = 'https://www.pagina12.com.ar'
     try:
         for pag in range(1, 3):
-            page = await fetch_simple(f'https://www.pagina12.com.ar/tags/danza/?page={pag}')
+            page = await fetch_simple(f'{BASE}/tags/danza/?page={pag}')
             soup = BeautifulSoup(page.html_content, 'html.parser')
             cards = soup.select('.p12-article-card-full')
             if not cards:
                 break
             for card in cards:
-                resultado = extraer_item(card, "Página 12", "https://www.pagina12.com.ar")
-                if not resultado or not es_de_danza(resultado['titulo'] + ' ' + resultado['descripcion']):
+                a = card.select_one('a[href]')
+                if not a:
                     continue
+                href = a['href']
+                if not (href.startswith('/') or href.startswith('http')):
+                    continue
+                link = (BASE + href) if href.startswith('/') else href
+                titulo_tag = card.select_one('h4.title, h4.p12Heading, h3, h2')
+                titulo = limpiar(titulo_tag.get_text()) if titulo_tag else ''
+                if len(titulo) < 5:
+                    continue
+                desc_tag = card.select_one('.p12-article-card-full--description, p')
+                desc = limpiar(desc_tag.get_text()) if desc_tag else titulo
+                # fecha desde URL: /2026/05/13/titulo/
+                m = re.search(r'/(\d{4})/(\d{2})/(\d{2})/', link)
+                fecha_iso = f"{m.group(1)}-{m.group(2)}-{m.group(3)}" if m else ''
+                fecha = f"{m.group(3)}/{m.group(2)}/{m.group(1)}" if m else ''
                 img = _imagen(card)
-                if img: resultado['imagen'] = img
-                t = card.select_one('time[datetime]')
-                if t: resultado['fecha_iso'] = t['datetime']
+                resultado = {
+                    "titulo": titulo[:120], "descripcion": desc[:300],
+                    "tipo": detectar_tipo(titulo + ' ' + desc),
+                    "fuente": "Página 12", "url": link,
+                    "fecha": fecha, "fecha_iso": fecha_iso, "es_danza": True,
+                }
+                if img:
+                    resultado['imagen'] = img
                 encontrados.append(resultado)
     except Exception as e:
         print(f"Página 12 error: {e}")
@@ -1037,4 +1068,135 @@ async def scrapear_infobae():
             encontrados.append(resultado)
     except Exception as e:
         print(f"Infobae error: {e}")
+    return encontrados
+
+
+def _rss_link(item):
+    """Extrae la URL del <link> dentro de un <item> RSS, evitando el canal."""
+    m = re.search(r'<link>(https?://[^<]+)</link>', str(item))
+    return m.group(1).strip() if m else None
+
+
+@noticia("Diario de Cultura")
+async def scrapear_diario_cultura():
+    from email.utils import parsedate_to_datetime
+    encontrados = []
+    try:
+        page = await fetch_simple('https://www.diariodecultura.com.ar/teatro-y-danza/feed/')
+        soup = BeautifulSoup(page.html_content, 'xml')
+        items = soup.select('item')
+        for item in items:
+            titulo_tag = item.find('title')
+            if not titulo_tag:
+                continue
+            titulo = limpiar(titulo_tag.get_text())
+            if len(titulo) < 5:
+                continue
+            link = _rss_link(item) or 'https://www.diariodecultura.com.ar'
+            pub = item.find('pubDate').get_text() if item.find('pubDate') else ''
+            try:
+                fecha_iso = parsedate_to_datetime(pub).strftime('%Y-%m-%dT%H:%M:%S')
+            except Exception:
+                fecha_iso = ''
+            desc_tag = item.find('description')
+            desc = limpiar(BeautifulSoup(desc_tag.get_text(), 'html.parser').get_text()) if desc_tag else titulo
+            imagen = None
+            encoded = item.find('content:encoded') or item.find('encoded')
+            if encoded:
+                m = re.search(r'src="(https://www\.diariodecultura\.com\.ar/wp-content/uploads/[^"]+)"', encoded.get_text())
+                if m:
+                    imagen = re.sub(r'-\d{3,4}x\d{3,4}(?=\.\w+$)', '', m.group(1))
+            resultado = {
+                "titulo": titulo[:120], "descripcion": desc[:300],
+                "tipo": detectar_tipo(titulo + ' ' + desc),
+                "fuente": "Diario de Cultura",
+                "url": link, "fecha": "", "fecha_iso": fecha_iso,
+            }
+            if imagen:
+                resultado["imagen"] = imagen
+            encontrados.append(resultado)
+    except Exception as e:
+        print(f"Diario de Cultura error: {e}")
+    return encontrados
+
+
+@evento("Ente Cultural Tucumán")
+async def scrapear_ente_cultural_tucuman():
+    from email.utils import parsedate_to_datetime
+    encontrados = []
+    try:
+        page = await fetch_simple('https://enteculturaltucuman.gob.ar/feed/')
+        soup = BeautifulSoup(page.html_content, 'xml')
+        items = soup.select('item')
+        for item in items:
+            titulo_tag = item.find('title')
+            if not titulo_tag:
+                continue
+            titulo = limpiar(titulo_tag.get_text())
+            if len(titulo) < 5:
+                continue
+            desc_tag = item.find('description')
+            desc = limpiar(BeautifulSoup(desc_tag.get_text(), 'html.parser').get_text()) if desc_tag else titulo
+            if not es_de_danza(titulo + ' ' + desc):
+                continue
+            link = _rss_link(item) or 'https://enteculturaltucuman.gob.ar'
+            pub = item.find('pubDate').get_text() if item.find('pubDate') else ''
+            try:
+                fecha_iso = parsedate_to_datetime(pub).strftime('%Y-%m-%d')
+            except Exception:
+                fecha_iso = ''
+            imagen = None
+            encoded = item.find('content:encoded') or item.find('encoded')
+            if encoded:
+                m = re.search(r'src="(https://enteculturaltucuman\.gob\.ar/wp-content/uploads/[^"]+)"', encoded.get_text())
+                if m:
+                    imagen = re.sub(r'-\d{3,4}x\d{3,4}(?=\.\w+$)', '', m.group(1))
+            resultado = {
+                "titulo": titulo[:120], "descripcion": desc[:300],
+                "tipo": detectar_tipo(titulo + ' ' + desc),
+                "fuente": "Ente Cultural Tucumán",
+                "url": link, "fecha": fecha_iso, "es_danza": True,
+            }
+            if imagen:
+                resultado["imagen"] = imagen
+            encontrados.append(resultado)
+    except Exception as e:
+        print(f"Ente Cultural Tucumán error: {e}")
+    return encontrados
+
+
+@evento("FAD UNCuyo")
+async def scrapear_fad_uncuyo():
+    from email.utils import parsedate_to_datetime
+    encontrados = []
+    try:
+        page = await fetch_simple('https://fad.uncuyo.edu.ar/rss')
+        soup = BeautifulSoup(page.html_content, 'xml')
+        items = soup.select('item')
+        for item in items:
+            titulo_tag = item.find('title')
+            if not titulo_tag:
+                continue
+            titulo = limpiar(titulo_tag.get_text())
+            if len(titulo) < 5:
+                continue
+            desc_tag = item.find('description')
+            desc = limpiar(BeautifulSoup(desc_tag.get_text(), 'html.parser').get_text()) if desc_tag else titulo
+            if not es_de_danza(titulo + ' ' + desc):
+                continue
+            link = _rss_link(item) or 'https://fad.uncuyo.edu.ar'
+            pub = item.find('pubDate').get_text() if item.find('pubDate') else ''
+            try:
+                fecha_iso = parsedate_to_datetime(pub).strftime('%Y-%m-%d')
+            except Exception:
+                fecha_iso = ''
+            resultado = {
+                "titulo": titulo[:120], "descripcion": desc[:300],
+                "tipo": detectar_tipo(titulo + ' ' + desc),
+                "fuente": "FAD UNCuyo",
+                "url": link, "fecha": fecha_iso,
+            }
+            encontrados.append(resultado)
+    except Exception as e:
+        print(f"FAD UNCuyo error: {e}")
     return encontrados

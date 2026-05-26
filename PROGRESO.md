@@ -1,12 +1,12 @@
 # PROGRESO — Danza Argentina App
 
-## Estado actual: deployado en Koyeb (2026-03-01)
+## Estado actual: deployado en Koyeb (2026-03-02)
 URL: https://guilty-sheila-kathryn-danzig-0b1aa800.koyeb.app
 
-**Conteo en vivo (2026-03-01):**
-- Eventos tab: ~15 (8 base + 7 CC Borges hardcoded)
+**Conteo estimado (2026-03-02):**
+- Eventos tab: ~20+ (CIAD + BA Ciudad + Alt Teatral + Teatro Colón + CTBA + Cultura Nación + CC Borges hardcoded)
 - Tango tab: ~17 (Hoy Milonga)
-- Noticias: ~38
+- Noticias (Prensa): ~38
 - Convocatorias: ~40
 
 ---
@@ -15,17 +15,17 @@ URL: https://guilty-sheila-kathryn-danzig-0b1aa800.koyeb.app
 
 | Fuente | Estado Koyeb | Método | Imagen | Notas |
 |---|---|---|---|---|
-| CIAD | ✅ ~9 items | fetch_stealth (patchright) | No | |
-| BA Ciudad | ✅ ~6 items | httpx JSON API | No | API: `/api/v1/eventos?categoria=danza&page={n}` |
+| CIAD | ✅ ~9 items | fetch_stealth (patchright) | ✅ Sí (fetch secundario por evento) | Imágenes en páginas de detalle `Local/*/` |
+| BA Ciudad | ✅ ~6 items | httpx JSON API | Sí | API: `/api/v1/eventos?categoria=danza&page={n}` |
 | Palacio Libertad | ❌ 0 items | fetch_simple | No | Funciona local, falla en Koyeb — pendiente |
 | Alternativa Teatral | ✅ ~4 items | fetch_simple | Sí | |
-| Teatro Colón | ✅ ~6 items | fetch_simple | No | |
+| Teatro Colón | ✅ ~6 items | fetch_simple | ✅ Sí (`img[src]` en `article.event-card`) | Título extraído del slug de URL. `es_danza=True`. |
 | CC Borges | ❌ 0 scraped | cloudscraper | Sí | Cloudflare bloquea IP Koyeb (datacenter). **Ver respaldo hardcoded.** |
-| Usina del Arte | ❌ 0 items | fetch_stealth | No | Pendiente investigar |
+| Usina del Arte | ⚠️ ~4 local / 0 Koyeb | fetch_simple | No | Items son folklore/peña, sin imagen en HTML. Koyeb devuelve 0 (posible bloqueo IP). |
 | CC Recoleta | ❌ 0 items | fetch_simple | No | 0 eventos de danza actuales (filtra por `#Danza`) |
 | Cultura Nación | ✅ ~1-5 items | fetch_simple | Sí | `cultura.gob.ar/agenda/filtro/?categoria=danza` |
 | Hoy Milonga | ✅ ~17 items | fetch_simple | Sí | tipo forzado "tango" |
-| CTBA Agenda | ✅ ~4 items | fetch_simple | No | Próximos 7 días en paralelo |
+| CTBA Agenda | ✅ ~4 items | fetch_simple | ✅ Sí (`data-background-image` en `.small_item`) | Próximos 7 días en paralelo |
 
 ### CC Borges — respaldo hardcodeado (main.py)
 - Cloudflare bloquea IP de Koyeb sin solución gratuita
@@ -34,13 +34,20 @@ URL: https://guilty-sheila-kathryn-danzig-0b1aa800.koyeb.app
 - **Recordatorio: actualizar el 2026-03-08** (o cuando expiren los eventos de abril)
 - Última actualización: 2026-03-01
 
+### CIAD — imágenes (detalle)
+- El listado (`todos-los-eventos.html`) no tiene imágenes — son `<font><a href="Local/...">` planos
+- Se hace fetch paralelo de cada página de evento (`Local/mes/evento.html`)
+- Selector: primer `<img>` con `width >= 200` y `height >= 100` y `width < 1000`, excluyendo logos CIAD y barras decorativas
+- URLs relativas (`../../images/...`) se resuelven a `https://www.laciad.info/images/...`
+- ~7 de 9 items obtienen imagen (2 páginas no tienen foto de evento)
+
 ---
 
 ## Scrapers de noticias (scrapers.py)
 
 | Fuente | Estado | Imagen | Fecha | Notas |
 |---|---|---|---|---|
-| Balletín Dance | ✅ ~10 items | Sí | `pubDate` RSS | Migrado a RSS feed — bypasea Cloudflare. |
+| Balletín Dance | ✅ ~10 items | ✅ Sí (~8/10) | `pubDate` RSS | RSS feed — bypasea Cloudflare. 2 artículos sin imagen en RSS (normal). |
 | Perfil | ⚠️ filtrado | Sí (srcset) | `<span class="date-time">` | Artículos de 2023-2024 → descartados por filtro 2 meses |
 | Clarín | ⚠️ filtrado | Sí | `<time>` | Ídem Perfil |
 | Página 12 | ✅ ~10 items | No | — | |
@@ -99,6 +106,11 @@ Cliente → GET / → HTML (frontend.py) → JS fetch /api/* → renderiza tarje
 - Parsea fechas: ISO 8601, DD/MM/YYYY, DD-MM-YYYY, "15 de enero de 2025"
 - Items sin fecha parseable se conservan
 
+### Flag `es_danza: True`
+- Bypasea el filtro `es_de_danza()` en `deduplicar()`
+- Usado en: Teatro Colón, CC Borges, Balletín Dance, CC Borges respaldo
+- Necesario cuando los títulos no contienen keywords de danza explícitas
+
 ---
 
 ## Disciplinas / tipos
@@ -108,7 +120,7 @@ Cliente → GET / → HTML (frontend.py) → JS fetch /api/* → renderiza tarje
 - **contemporánea** — experimental, escénica, coreografía (fallback)
 - **tango** — tango, milonga, bandoneón, tango escenario
 
-Detección en `detectar_tipo()` (utils.py): orden tango → clásica → folklórica → contemporánea.
+Detección en `detectar_tipo()` (utils.py): orden tango → contemporánea → clásica → folklórica.
 
 ---
 
@@ -159,7 +171,7 @@ xdg-open http://127.0.0.1:8000
 ### Prioridad alta
 - [ ] **Dominio personalizado** — agregar dominio a Koyeb
 - [ ] **Palacio Libertad** — funciona local, devuelve 0 en Koyeb (¿JS? ¿IP bloqueada?)
-- [ ] **Usina del Arte** — siempre 0 items, investigar
+- [ ] **Usina del Arte** — funciona local (~4 items folklore), 0 en Koyeb (¿IP bloqueada?)
 
 ### Fuentes nuevas a agregar
 | Fuente | URL | Tipo | Estado |
@@ -178,7 +190,7 @@ xdg-open http://127.0.0.1:8000
 | Teatro Argentino LP | Programación hardcodeada en HTML, sigue mostrando diciembre 2024 |
 
 ### Problemas conocidos
-- **Balletín Dance noticias**: devuelve 0 — investigar selector
 - **La Nación**: URL de sección danza desconocida (`/tags/danza/` da 404)
-- **TN y El1 Digital**: 0 items — investigar
+- **TN y El1 Digital**: 0 items — pendiente investigar
 - **Perfil/Clarín**: archivo de danza muy viejo, filtro 2 meses los descarta casi siempre
+- **Balletín Dance noticias**: 2 artículos sin imagen — es normal, no tienen imagen en el RSS
