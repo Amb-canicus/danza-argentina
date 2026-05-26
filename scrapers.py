@@ -411,23 +411,14 @@ async def scrapear_teatro_colon():
 
 @evento("CC Borges")
 async def scrapear_cc_borges():
-    """cloudscraper para pasar el challenge de Cloudflare y llamar la API interna."""
-    import cloudscraper
-    from concurrent.futures import ThreadPoolExecutor
     encontrados = []
     BASE = 'https://centroculturalborges.gob.ar'
     API = f'{BASE}/api/public/eventos-destacados?disciplina=danza'
     try:
-        def fetch_cf():
-            scraper = cloudscraper.create_scraper()
-            r = scraper.get(API, timeout=30)
-            print(f"CC Borges status={r.status_code}")
-            return r.json() if r.status_code == 200 else []
-
-        loop = asyncio.get_event_loop()
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            items = await loop.run_in_executor(pool, fetch_cf)
-
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+            r = await client.get(API, headers={"User-Agent": "Mozilla/5.0"})
+        print(f"CC Borges status={r.status_code}")
+        items = r.json() if r.status_code == 200 else []
         if not isinstance(items, list):
             items = []
         print(f"CC Borges: {len(items)} items")
