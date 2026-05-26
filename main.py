@@ -25,6 +25,18 @@ convocatorias = []
 
 
 
+BASE_BORGES = "https://centroculturalborges.gob.ar"
+# Fallback para cuando Cloudflare bloquea la IP de Koyeb. Actualizar cada ~4 semanas.
+# Última actualización: 2026-05-26
+EVENTOS_BORGES_RESPALDO = [
+    {"titulo": "La margarita, el murciélago y la puerta verde", "descripcion": "Una reorganización del contenido de tres obras de videodanza a través de un mapping de video circular, con la presencia real de la bailarina. (+16)", "tipo": "contemporánea", "fuente": "CC Borges", "url": f"{BASE_BORGES}/disciplinas?d=danza", "fecha": "2026-05-28", "imagen": f"{BASE_BORGES}/uploads/4fc1fb17-498e-48a4-9566-47590af186db.jpg", "es_danza": True},
+    {"titulo": "TRONCO", "descripcion": "Una performance que navega libremente entre la escultura, la pintura de Caravaggio y el lenguaje audiovisual.", "tipo": "contemporánea", "fuente": "CC Borges", "url": f"{BASE_BORGES}/disciplinas?d=danza", "fecha": "2026-05-29", "imagen": f"{BASE_BORGES}/uploads/d5fd2d46-fcad-48c2-a685-fbe91236f40c.jpg", "es_danza": True},
+    {"titulo": "LATINA BAUSCH", "descripcion": "", "tipo": "contemporánea", "fuente": "CC Borges", "url": f"{BASE_BORGES}/disciplinas?d=danza", "fecha": "2026-06-05", "es_danza": True},
+    {"titulo": "Bailan como muñecos mis anhelos por volver a la escuela", "descripcion": "", "tipo": "contemporánea", "fuente": "CC Borges", "url": f"{BASE_BORGES}/disciplinas?d=danza", "fecha": "2026-07-02", "es_danza": True},
+    {"titulo": "Bailarinas Incendiadas", "descripcion": "", "tipo": "contemporánea", "fuente": "CC Borges", "url": f"{BASE_BORGES}/disciplinas?d=danza", "fecha": "2026-07-03", "es_danza": True},
+    {"titulo": "PAPAPAPA", "descripcion": "", "tipo": "contemporánea", "fuente": "CC Borges", "url": f"{BASE_BORGES}/disciplinas?d=danza", "fecha": "2026-08-07", "es_danza": True},
+]
+
 NOTICIAS_RESPALDO = [
     {"titulo": "El Ballet Estable del Colón celebra 80 años", "descripcion": "La compañía más importante de danza clásica de Argentina cumple ocho décadas.", "tipo": "clásica", "fuente": "Telam", "url": "https://www.telam.com.ar", "fecha": "2026"},
     {"titulo": "Récord de inscriptos en el Festival de Malambo de Laborde", "descripcion": "El certamen folklórico más prestigioso del país recibió inscripciones de todo el país.", "tipo": "folklórica", "fuente": "Infobae", "url": "https://www.infobae.com", "fecha": "2026"},
@@ -159,6 +171,18 @@ async def scrape():
         print(f"  {'✅' if isinstance(resultado, list) else '❌'} {scraper['nombre']}: {estado}")
 
     listas_ev = [r for r in resultados_ev if isinstance(r, list)]
+
+    # Si CC Borges scraper falló (Cloudflare bloqueó en Koyeb), usar fallback hardcodeado
+    borges_scraped = any(
+        r for r in resultados_ev
+        if isinstance(r, list) and any(e.get("fuente") == "CC Borges" for e in r)
+    )
+    if not borges_scraped:
+        hoy = date.today()
+        vigentes = [e for e in EVENTOS_BORGES_RESPALDO if date.fromisoformat(e["fecha"]) >= hoy]
+        if vigentes:
+            listas_ev.append(vigentes)
+            print(f"  ⚠️ CC Borges (fallback hardcode): {len(vigentes)} items")
 
     todos_eventos  = mezclar(listas_ev)
     todas_noticias = mezclar([r[:10] for r in resultados_no if isinstance(r, list)])
