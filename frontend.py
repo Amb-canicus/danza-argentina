@@ -27,6 +27,9 @@ HTML = """<!DOCTYPE html>
 <meta property="og:image" content="__BASE_URL__/static/og-image.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Agenda de Danza Argentina — Ballet, Folklore y Contemporánea en Buenos Aires">
+<meta name="theme-color" content="#050505">
+<link rel="apple-touch-icon" href="__BASE_URL__/static/og-image.png">
 
 <script type="application/ld+json">
 {
@@ -198,7 +201,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 /* sin imagen */
 .event-card.no-image { border: 1px solid var(--line); }
-.event-card.no-image .info { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: space-between; padding: 16px; }
+.event-card.no-image .info { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: space-between; padding: 52px 16px 16px; }
 .event-card.no-image .title { font-size: clamp(26px, 3.5vw, 46px); line-height: 0.9; margin: 0; }
 .event-card.no-image .meta-card { color: var(--fg-faint); }
 .event-card.no-image:hover { border-color: var(--accent); }
@@ -276,6 +279,12 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   font-size: var(--meta); text-transform: uppercase; letter-spacing: var(--tracking); color: var(--fg-faint);
 }
 .foot-logo { font-family: var(--ff-display); font-size: 15px; font-weight: 900; color: var(--fg); letter-spacing: -0.01em; }
+.cafecito-block { margin-top: 8px; }
+.cafecito-block p { font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--fg-faint); margin: 0 0 10px; }
+.cafecito-btn { display: inline-flex; align-items: center; gap: 7px; padding: 8px 14px; border: 1px solid var(--line-strong); border-radius: 4px; font-size: 12px; font-weight: 500; color: var(--fg-mute); text-decoration: none; transition: border-color .15s, color .15s; letter-spacing: 0.04em; }
+.cafecito-btn:hover { border-color: var(--accent); color: var(--fg); }
+.foot-cafecito { font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--fg-faint); text-decoration: none; transition: color .15s; }
+.foot-cafecito:hover { color: var(--accent); }
 
 /* ── RESPONSIVE ── */
 @media (max-width: 1100px) {
@@ -337,6 +346,13 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
         <li onclick="aplicarSubtipo('residencia',this)">Residencias</li>
         <li onclick="aplicarSubtipo('concurso',this)">Concursos</li>
       </ul>
+    </div>
+    <div class="sidebar-divider"></div>
+    <div class="cafecito-block">
+      <p>Apoyá el proyecto</p>
+      <a class="cafecito-btn" href="https://cafecito.app/danzaargentina" target="_blank" rel="noopener">
+        ☕ Invitame un café
+      </a>
     </div>
   </aside>
 
@@ -410,7 +426,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 <footer class="site-footer">
   <div class="foot-logo">DANZA.AR</div>
   <div>Agenda independiente · Buenos Aires, ARG</div>
-  <div>Actualizado a diario</div>
+  <a class="foot-cafecito" href="https://cafecito.app/danzaargentina" target="_blank" rel="noopener">☕ Apoyá el proyecto</a>
 </footer>
 
 <script>

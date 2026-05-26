@@ -76,6 +76,7 @@ def generar_html_bot() -> str:
                     "description": ev.get("descripcion", ""),
                     "url": ev["url"],
                     "image": ev.get("imagen", ""),
+                    **( {"startDate": ev["fecha"]} if ev.get("fecha") else {} ),
                     "organizer": {"@type": "Organization", "name": ev["fuente"]},
                     "location": {
                         "@type": "Place",
@@ -249,11 +250,7 @@ def favicon_svg():
 def sitemap():
     hoy = date.today().isoformat()
     urls = [
-        (f"{BASE_URL}/",              "1.0", "daily"),
-        (f"{BASE_URL}/eventos",       "0.9", "daily"),
-        (f"{BASE_URL}/tango",         "0.8", "daily"),
-        (f"{BASE_URL}/convocatorias", "0.8", "daily"),
-        (f"{BASE_URL}/prensa",        "0.7", "weekly"),
+        (f"{BASE_URL}/", "1.0", "daily"),
     ]
     tags = "".join(f"""
   <url>
